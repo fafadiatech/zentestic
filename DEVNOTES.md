@@ -1,5 +1,116 @@
 # Developer Notes
 
+## Data Model
+
+Zentestic is a Frappe app on ERPNext v15. **`Project`** and **`User`** are standard platform DocTypes; everything below lives under `zentestic/zentestic/doctype/`.
+
+### ER diagram (implemented)
+
+```mermaid
+erDiagram
+    Project ||--o{ Product : project
+    Project ||--o{ TestCase : project
+    Product ||--o{ TestCase : product
+    TestCase ||--o| TestCase : amended_from
+
+    Project ||--o{ TestPlan : project
+    Product ||--o{ TestPlan : product
+    TestPlan ||--|{ TestCaseHolder : test_cases
+    TestCaseHolder }o--|| TestCase : test_case
+    TestPlan ||--|{ TestPlanParticipant : participants
+    TestPlanParticipant }o--|| User : user
+
+    TestPlan ||--o{ TestRun : test_plan
+    TestRun }o--o| User : testing_lead
+    TestRun ||--o| TestRun : retest_of
+    TestRun ||--|{ TestResult : test_results
+    TestResult }o--|| TestCase : test_case
+    TestResult }o--o| User : assignee
+    TestRun ||--|{ TestRunStakeholder : stakeholders
+    TestRunStakeholder }o--|| User : user
+
+    Product {
+        string name "PROD-{#####}"
+        data product
+        link project
+    }
+    TestCase {
+        string name "TC-{product}-{#####}"
+        data title
+        link project
+        link product
+        text pre_condition
+        text steps_to_reproduce
+        text expected_result
+        link amended_from
+    }
+    TestPlan {
+        string name "TP-{product}-{#####}"
+        link project
+        link product
+        data title
+        select allocation_strategy
+    }
+    TestRun {
+        string name "TRN-{test_plan}-{#####}"
+        link test_plan
+        data title
+        select status
+        link testing_lead
+        percent progress
+        check is_retest
+        link retest_of
+    }
+    TestResult {
+        link test_case
+        link assignee
+        select status
+        text snapshots
+        attach artefact
+    }
+```
+
+**Child tables** (Frappe `istable` — rows owned by the parent, no standalone permissions):
+
+| DocType | Parent | Link field |
+|---------|--------|------------|
+| Test Case Holder | Test Plan | `test_case` → Test Case |
+| Test Plan Participant | Test Plan | `user` → User |
+| Test Result | Test Run | `test_case` → Test Case; `assignee` → User |
+| Test Run Stakeholder | Test Run | `user` → User |
+
+**Execution flow:** `Project → Product → Test Case` (library) and `Test Plan → Test Run → Test Result` (planning & execution). Test Results snapshot case fields at run time (`pre_condition`, `steps_to_produce`, `expected_result`) so later case edits do not alter historical runs.
+
+### ER diagram (planned — see ROADMAP.md)
+
+```mermaid
+erDiagram
+    Project ||--o{ Requirement : project
+    Product ||--o{ Requirement : product
+    Requirement ||--|{ RequirementLink : links
+    RequirementLink }o--|| TestCase : test_case
+
+    Project ||--o{ TestSuite : project
+    Product ||--o{ TestSuite : product
+    TestSuite ||--|{ TestCaseHolder : test_cases
+    TestPlan }o--o{ TestSuite : suites
+
+    ZentesticSettings {
+        string telegram_bot_token
+        string slack_webhook
+        link default_qa_lead_role
+    }
+```
+
+| DocType | Phase | Notes |
+|---------|-------|-------|
+| **Test Suite** | 2 (optional) | Reusable case collection; Test Plan may link suites instead of ad-hoc holders |
+| **Requirement** | 3 | `REQ-{project}-{#####}`; title, description, priority, status, optional `external_id` |
+| **Requirement Link** | 3 | Child table on Test Case for many-to-many req ↔ case traceability |
+| **Zentestic Settings** | 7 | Singleton for Telegram, Slack, default roles (replaces site config) |
+
+Phase 2 may also add **tags** (Frappe Tag vs custom child table — open question in ROADMAP).
+
 ## Installation
 
 ### Frappe Bench
